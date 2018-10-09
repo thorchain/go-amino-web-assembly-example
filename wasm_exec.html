@@ -1,0 +1,120 @@
+<!doctype html>
+<!--
+Copyright 2018 The Go Authors. All rights reserved.
+Use of this source code is governed by a BSD-style
+license that can be found in the LICENSE file.
+-->
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>Go wasm</title>
+</head>
+
+<body>
+	<script src="wasm_exec.js"></script>
+	<script>
+		if (!WebAssembly.instantiateStreaming) { // polyfill
+			WebAssembly.instantiateStreaming = async (resp, importObject) => {
+				const source = await (await resp).arrayBuffer();
+				return await WebAssembly.instantiate(source, importObject);
+			};
+		}
+
+		const go = new Go();
+		let mod, inst;
+		WebAssembly.instantiateStreaming(fetch("test.wasm"), go.importObject).then((result) => {
+			mod = result.module;
+			inst = result.instance;
+			document.getElementById("runButton").disabled = false;
+		});
+
+		let signMessage
+		let signMessageReceived
+		let resolveSignMessageReceived
+		function setSignMessage(callback) {
+			signMessage = callback
+			console.log('issue coin received')
+			document.getElementById("signButton").disabled = false;
+			resolveSignMessageReceived()
+		}
+
+		async function run() {
+			document.getElementById("runButton").disabled = 'disabled';
+			console.clear();
+			signMessageReceived = new Promise(resolve=>{
+				resolveSignMessageReceived = resolve
+			})
+			const run = go.run(inst)
+			await signMessageReceived
+			await run
+			inst = await WebAssembly.instantiate(mod, go.importObject); // reset instance
+		}
+
+		async function sign() {
+			const msg = document.getElementById("message").value
+			console.log({msg})
+			signMessage(msg)
+		}
+
+		function receiveAminoBinaryEncodedMessage(msg) {
+			const buf = str2ab(msg)
+			const arrInts = ab2ai(buf);
+			window.b = buf
+			console.log('amino binary', msg)
+			console.log('array buffer', buf)
+			document.getElementById('aminoBinary').setAttribute('value', msg)
+			document.getElementById('aminoBuffer').setAttribute('value', arrInts)
+		}
+		
+		function receiveSignature(signature) {
+			document.getElementById('signature').setAttribute('value', signature)
+		}
+		function ab2str(buf) {
+		  return String.fromCharCode.apply(null, new Uint16Array(buf));
+		}
+		function str2ab(str) {
+			var buf = new ArrayBuffer(str.length*4); // 4 bytes for each char
+			var bufView = new Uint16Array(buf);
+			for (var i=0, strLen=str.length; i < strLen; i++) {
+			  bufView[i] = str.charCodeAt(i);
+			}
+			return buf;
+		}
+
+		function ab2ai(buf) {
+			let dataView = new DataView(buf)
+			let arr = []
+			for (let i = 0; i < dataView.byteLength; i+=2) {
+				arr.push(dataView.getUint16(i, true))
+			}
+			return arr
+		}
+	</script>
+
+	<button onClick="run();" id="runButton" disabled>Start Goroutine</button>
+	<br />
+	<br />
+	<p>Enter Message</p>
+	<textarea id="message" rows=12 cols=60>
+	{
+	  "privKey": "11afb09b5d7e3cb7be91c57e144a899ff0bbb2b97b2491acd6aae54c2d2d54f5",
+	  "pubKey": "046b31cce43df0636eb09ab7df10f76c7c196eb804d0ffeec2ada8181358f2dc885aaf77fc81ceeaf5f0b3d08de08579170e599c4455416f0ecabe9f71688ca0a3",
+	  "issuer": "1F1tAaz5x1HUXrCNLbtMDqcw6o5GNn4xqX",
+	  "receiver": "btMDqcw6oz5x1HUXrCNL5GNn4xqX1F1tAa"
+	}
+	</textarea>
+	<br />
+	<button onClick="sign();" id="signButton" disabled>Sign</button>
+	<br />
+	<p>Amino Encoded Binary </p>
+	<input id="aminoBinary" style="width:380px; height:40px; padding: 5px" type="text"/>
+
+	<p>Amino Buffer </p>
+	<input id="aminoBuffer" style="width:380px; height:40px; padding: 5px" type="text"/>
+
+	<p>Signature</p>
+	<input id="signature" style="width:380px; height:40px; padding: 5px" type="text"/>
+</body>
+
+</html>
